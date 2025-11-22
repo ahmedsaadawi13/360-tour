@@ -316,7 +316,7 @@ This project is provided as-is for educational and commercial use.
 For issues and questions:
 - Check the troubleshooting section above
 - Review the code comments for implementation details
-- Contact: support@splash360tour.com
+- Contact: ahmed.sha3ban13@gmail.com
 
 ## Future Enhancements
 
@@ -340,4 +340,4 @@ Developed as a complete, production-ready SaaS platform for real estate virtual 
 ---
 
 **Version**: 1.0.0
-**Last Updated**: 2024
+**Last Updated**: 2025
