@@ -1,0 +1,8 @@
+# Enable Rewrite Engine
+RewriteEngine On
+
+# Redirect all requests to index.php with query string preserved
+# Unless the request is for an actual file or directory
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
