@@ -1,0 +1,11 @@
+.git
+.gitignore
+README.md
+PROJECT_SUMMARY.md
+DOCKER_DEPLOYMENT.md
+docker-compose.yml
+.env
+.env.example
+*.md
+public/uploads/*
+!public/uploads/.gitkeep
