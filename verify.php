@@ -2,12 +2,15 @@
 /**
  * Installation Verification Script
  *
- * Run this script to verify your Splash360 Tour installation
- * Access via: http://localhost/verify.php
+ * Run from the command line (it lives outside the public web root on purpose):
+ *   php verify.php
  */
 
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
+
+// Load .env the same way the application does
+require_once __DIR__ . '/app/bootstrap.php';
 
 $checks = [];
 $errors = [];
@@ -24,7 +27,7 @@ if (version_compare($phpVersion, '7.4.0', '>=')) {
 }
 
 // Check PHP extensions
-$requiredExtensions = ['pdo', 'pdo_mysql', 'mbstring', 'session', 'json'];
+$requiredExtensions = ['pdo', 'pdo_mysql', 'mbstring', 'session', 'json', 'fileinfo', 'gd', 'curl'];
 foreach ($requiredExtensions as $ext) {
     if (extension_loaded($ext)) {
         $checks["PHP Extension: $ext"] = '✓ Loaded';
@@ -46,6 +49,26 @@ if (is_dir($uploadDir)) {
 } else {
     $errors[] = 'Uploads directory does not exist';
     $checks['Uploads Directory'] = '✗ Missing';
+}
+
+// Check storage/logs (mail log, PHP error log)
+$logDir = __DIR__ . '/storage/logs';
+if (is_dir($logDir) && is_writable($logDir)) {
+    $checks['Storage Directory'] = '✓ Writable';
+} else {
+    $errors[] = 'storage/logs is missing or not writable';
+    $checks['Storage Directory'] = '✗ Not Writable';
+}
+
+// Check upload limits (360° panoramas are large)
+$uploadMax = ini_get('upload_max_filesize');
+$checks['upload_max_filesize'] = $uploadMax;
+if ((int) $uploadMax < 10 && stripos($uploadMax, 'G') === false) {
+    $warnings[] = "upload_max_filesize is {$uploadMax}; 20M or more is recommended for panoramas";
+}
+
+if (config('app_key') === 'change-me-in-env' || config('app_key') === 'change-me') {
+    $warnings[] = 'APP_KEY is not set: generate one with php -r "echo bin2hex(random_bytes(32));"';
 }
 
 // Check .env file
@@ -85,13 +108,14 @@ try {
     $stmt = $pdo->query("SHOW TABLES");
     $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
 
-    $requiredTables = ['users', 'tenants', 'properties', 'tours', 'scenes', 'plans'];
+    $requiredTables = ['users', 'tenants', 'properties', 'tours', 'scenes', 'plans', 'hotspots',
+        'leads', 'tour_views', 'login_attempts', 'schema_migrations'];
     $missingTables = array_diff($requiredTables, $tables);
 
     if (empty($missingTables)) {
         $checks['Database Tables'] = '✓ All present (' . count($tables) . ' tables)';
     } else {
-        $errors[] = 'Missing database tables: ' . implode(', ', $missingTables);
+        $errors[] = 'Missing database tables: ' . implode(', ', $missingTables) . ' (run: php bin/migrate.php)';
         $checks['Database Tables'] = '✗ Missing tables';
     }
 

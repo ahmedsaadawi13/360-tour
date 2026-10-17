@@ -5,12 +5,6 @@
  * Main tenant dashboard
  */
 
-require_once __DIR__ . '/../Middleware/TenantMiddleware.php';
-require_once __DIR__ . '/../Models/Tenant.php';
-require_once __DIR__ . '/../Models/TenantSubscription.php';
-require_once __DIR__ . '/../Models/Property.php';
-require_once __DIR__ . '/../Models/Tour.php';
-
 class DashboardController
 {
     private $tenantModel;
@@ -35,25 +29,25 @@ class DashboardController
     {
         $tenantId = current_tenant_id();
 
-        // Get subscription info
         $subscription = $this->subscriptionModel->getActiveSubscription($tenantId);
         $trialDays = $this->subscriptionModel->getTrialDaysRemaining($tenantId);
-
-        // Get usage stats
         $stats = $this->tenantModel->getUsageStats($tenantId);
 
-        // Get recent properties
-        $recentProperties = $this->propertyModel->where(['tenant_id' => $tenantId], 'created_at', 'DESC');
-        $recentProperties = array_slice($recentProperties, 0, 5);
+        $recentProperties = array_slice($this->propertyModel->getByTenantFiltered($tenantId), 0, 5);
+        $recentTours = array_slice($this->tourModel->getByTenant($tenantId), 0, 5);
 
-        // Get recent tours
-        $recentTours = $this->tourModel->getByTenant($tenantId);
-        $recentTours = array_slice($recentTours, 0, 5);
+        $leadModel = new Lead();
+        $leadCounts = $leadModel->countByStatus($tenantId);
+        $recentLeads = array_slice($leadModel->getByTenantFiltered($tenantId), 0, 5);
 
         view('tenant.dashboard', [
+            'tenant' => $this->tenantModel->find($tenantId),
             'subscription' => $subscription,
             'trialDays' => $trialDays,
             'stats' => $stats,
+            'views30' => (new TourView())->tenantViews($tenantId, 30),
+            'leadCounts' => $leadCounts,
+            'recentLeads' => $recentLeads,
             'recentProperties' => $recentProperties,
             'recentTours' => $recentTours
         ]);

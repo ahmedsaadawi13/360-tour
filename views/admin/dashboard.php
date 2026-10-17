@@ -1,58 +1,40 @@
 <?php
-$pageTitle = 'Platform Admin Dashboard';
+$pageTitle = 'Admin Dashboard';
 ob_start();
 ?>
 
-<h2 class="mb-3">Platform Administration</h2>
+<h2 class="mb-3">Platform Overview</h2>
 
 <div class="stats-grid">
     <div class="stat-card">
-        <h3><?php echo $stats['total_tenants']; ?></h3>
-        <p>Total Tenants</p>
+        <h3><?php echo (int) $stats['total_tenants']; ?></h3>
+        <p>Tenants</p>
+        <small><?php echo (int) $stats['active_tenants']; ?> active</small>
     </div>
-
     <div class="stat-card">
-        <h3><?php echo $stats['active_tenants']; ?></h3>
-        <p>Active Tenants</p>
+        <h3><?php echo (int) $stats['active_subscriptions']; ?></h3>
+        <p>Paying Subscriptions</p>
+        <small><?php echo (int) $stats['trialing_subscriptions']; ?> on trial</small>
     </div>
-
     <div class="stat-card">
-        <h3><?php echo $stats['total_properties']; ?></h3>
-        <p>Total Properties</p>
+        <h3><?php echo format_currency($stats['revenue']); ?></h3>
+        <p>Revenue (paid invoices)</p>
+        <small><a href="<?php echo base_url('?route=admin/invoices&status=pending'); ?>"><?php echo (int) $stats['pending_invoices']; ?> pending</a></small>
     </div>
-
     <div class="stat-card">
-        <h3><?php echo $stats['total_tours']; ?></h3>
-        <p>Total Tours</p>
+        <h3><?php echo (int) $stats['total_properties']; ?></h3>
+        <p>Properties</p>
+    </div>
+    <div class="stat-card">
+        <h3><?php echo (int) $stats['total_tours']; ?></h3>
+        <p>Tours</p>
+        <small><?php echo (int) $stats['published_tours']; ?> published</small>
     </div>
 </div>
 
-<div class="card">
-    <h3>Recent Tenants</h3>
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Company</th>
-                <th>Email</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-            <?php foreach ($recentTenants as $tenant): ?>
-                <tr>
-                    <td><?php echo e($tenant['name']); ?></td>
-                    <td><?php echo e($tenant['email']); ?></td>
-                    <td><span class="badge badge-<?php echo $tenant['status'] === 'active' ? 'success' : 'danger'; ?>"><?php echo e($tenant['status']); ?></span></td>
-                    <td><?php echo format_date($tenant['created_at'], 'Y-m-d'); ?></td>
-                    <td>
-                        <a href="<?php echo base_url('?route=admin/tenant-view&id=' . $tenant['id']); ?>" class="btn btn-sm btn-primary">View</a>
-                    </td>
-                </tr>
-            <?php endforeach; ?>
-        </tbody>
-    </table>
+<div class="card table-responsive">
+    <h3 class="mb-2">Recent Tenants</h3>
+    <?php require __DIR__ . '/_tenant_table.php'; ?>
 </div>
 
 <?php

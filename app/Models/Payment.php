@@ -22,7 +22,7 @@ class Payment extends BaseModel
                 FROM {$this->table} p
                 LEFT JOIN invoices i ON p.invoice_id = i.id
                 WHERE p.tenant_id = ?
-                ORDER BY p.paid_at DESC";
+                ORDER BY p.paid_at DESC, p.id DESC";
 
         $stmt = $this->query($sql, [$tenantId]);
         return $stmt->fetchAll();

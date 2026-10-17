@@ -70,7 +70,7 @@ Get your 360° virtual tour platform running in **under 5 minutes**!
 
 ## ✅ Verify Installation
 
-Visit: `http://localhost:8080/verify.php`
+Run: `docker-compose exec web php verify.php`
 
 This will check:
 - ✓ PHP version and extensions
@@ -86,7 +86,7 @@ This will check:
 2. **Change password** immediately
 3. **Create a test agency** (tenant)
 4. **Upload a 360° image** and create your first tour
-5. **Delete** `verify.php` for security
+5. Schedule `php bin/cron.php` hourly (subscription renewals & trial expiry)
 
 ---
 
@@ -150,7 +150,7 @@ chown -R www-data:www-data public/uploads
 ## 💡 Pro Tips
 
 1. Use **Docker** for fastest setup and easy deployment
-2. Test with `verify.php` before going live
+2. Run `php verify.php` before going live
 3. Read **PRODUCTION_GUIDE.md** before deploying
 4. Keep backups of database and uploads
 5. Monitor logs regularly

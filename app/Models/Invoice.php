@@ -18,7 +18,7 @@ class Invoice extends BaseModel
      */
     public function getByTenant($tenantId)
     {
-        return $this->where(['tenant_id' => $tenantId], 'created_at', 'DESC');
+        return $this->where(['tenant_id' => $tenantId], 'id', 'DESC');
     }
 
     /**
@@ -26,16 +26,38 @@ class Invoice extends BaseModel
      */
     public function generateInvoiceNumber()
     {
-        $prefix = 'INV-';
-        $date = date('Ymd');
-        $random = rand(1000, 9999);
+        do {
+            $number = 'INV-' . date('Ymd') . '-' . strtoupper(bin2hex(random_bytes(3)));
+        } while ($this->first(['invoice_number' => $number]));
 
-        return $prefix . $date . '-' . $random;
+        return $number;
     }
 
     /**
      * Mark invoice as paid
      */
+    public function getAllWithTenant($status = null)
+    {
+        $sql = "SELECT i.*, t.name AS tenant_name
+                FROM {$this->table} i
+                JOIN tenants t ON i.tenant_id = t.id";
+        $params = [];
+        if ($status) {
+            $sql .= " WHERE i.status = ?";
+            $params[] = $status;
+        }
+        $sql .= " ORDER BY i.created_at DESC, i.id DESC";
+        return $this->query($sql, $params)->fetchAll();
+    }
+
+    /**
+     * Total revenue from paid invoices
+     */
+    public function totalPaid()
+    {
+        return (float) $this->query("SELECT COALESCE(SUM(amount), 0) AS total FROM {$this->table} WHERE status = 'paid'")->fetch()['total'];
+    }
+
     public function markAsPaid($invoiceId)
     {
         $sql = "UPDATE {$this->table} SET status = 'paid', paid_at = NOW() WHERE id = ?";

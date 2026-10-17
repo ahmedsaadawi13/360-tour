@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Register - Splash360 Tour</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="<?php echo asset('css/style.css'); ?>">
 </head>
 <body>
@@ -14,7 +15,7 @@
             <?php require __DIR__ . '/../partials/flash.php'; ?>
 
             <form method="POST">
-                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                <?php echo csrf_field(); ?>
 
                 <div class="form-group">
                     <label class="form-label">Company Name</label>
@@ -41,12 +42,13 @@
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                     <div class="form-group">
                         <label class="form-label">Password</label>
-                        <input type="password" name="password" class="form-control" required>
+                        <input type="password" name="password" class="form-control" required minlength="8" autocomplete="new-password">
+                        <small class="muted">At least 8 characters</small>
                     </div>
 
                     <div class="form-group">
                         <label class="form-label">Confirm Password</label>
-                        <input type="password" name="password_confirm" class="form-control" required>
+                        <input type="password" name="password_confirm" class="form-control" required minlength="8" autocomplete="new-password">
                     </div>
                 </div>
 
@@ -55,7 +57,7 @@
                     <select name="plan_id" class="form-select" required>
                         <option value="">Choose a plan...</option>
                         <?php foreach ($plans as $plan): ?>
-                            <option value="<?php echo $plan['id']; ?>">
+                            <option value="<?php echo (int) $plan['id']; ?>" <?php echo ((string) ($selectedPlan ?? '') === (string) $plan['id'] || ($selectedPlan ?? '') === $plan['slug']) ? 'selected' : ''; ?>>
                                 <?php echo e($plan['name']); ?> -
                                 <?php echo format_currency($plan['price_monthly']); ?>/month
                             </option>
@@ -63,6 +65,7 @@
                     </select>
                 </div>
 
+                <p class="muted mb-2"><?php echo (int) config('trial_days'); ?>-day free trial. No credit card required.</p>
                 <button type="submit" class="btn btn-success" style="width: 100%;">Create Account</button>
             </form>
 

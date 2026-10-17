@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>404 - Page Not Found</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="<?php echo asset('css/style.css'); ?>">
 </head>
 <body>

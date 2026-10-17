@@ -4,6 +4,11 @@
 # Uploads
 public/uploads/*
 !public/uploads/.gitkeep
+!public/uploads/.htaccess
+
+# Runtime logs (mail.log, php-error.log)
+storage/logs/*
+!storage/logs/.gitkeep
 
 # Logs
 *.log

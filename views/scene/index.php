@@ -1,5 +1,5 @@
 <?php
-$pageTitle = 'Scenes - ' . e($tour['title']);
+$pageTitle = 'Scenes - ' . $tour['title'];
 ob_start();
 ?>
 
@@ -12,19 +12,21 @@ ob_start();
 
 <div class="card">
     <?php if (!empty($scenes)): ?>
+        <p class="muted mb-2">The first scene is where visitors start. Use the arrows to change the order.</p>
         <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px;">
-            <?php foreach ($scenes as $scene): ?>
-                <div style="border: 1px solid var(--border-color); border-radius: 8px; padding: 15px;">
-                    <?php if ($scene['image_path']): ?>
-                        <img src="<?php echo asset($scene['image_path']); ?>" alt="Scene" style="width: 100%; height: 150px; object-fit: cover; border-radius: 5px; margin-bottom: 10px;">
-                    <?php endif; ?>
-                    <h4><?php echo e($scene['name']); ?></h4>
-                    <p style="font-size: 0.9rem; color: var(--gray);">Order: <?php echo $scene['order_index']; ?></p>
-                    <div class="flex gap-1 mt-2">
+            <?php foreach ($scenes as $i => $scene): ?>
+                <div class="scene-card">
+                    <img src="<?php echo e(asset($scene['thumbnail_path'] ?: $scene['image_path'])); ?>" alt="" loading="lazy">
+                    <h4><?php echo $i + 1; ?>. <?php echo e($scene['name']); ?></h4>
+                    <div class="flex gap-1 mt-1">
                         <a href="<?php echo base_url('?route=scene/edit&id=' . $scene['id']); ?>" class="btn btn-sm btn-primary" style="flex: 1;">Edit</a>
-                        <a href="<?php echo base_url('?route=scene/delete&id=' . $scene['id'] . '&csrf_token=' . csrf_token()); ?>" 
-                           onclick="return confirm('Delete this scene?')" 
-                           class="btn btn-sm btn-danger">Delete</a>
+                        <?php if ($i > 0): ?>
+                            <?php echo post_button(base_url('?route=scene/move'), '↑', 'btn btn-sm btn-secondary', null, ['id' => $scene['id'], 'direction' => 'up']); ?>
+                        <?php endif; ?>
+                        <?php if ($i < count($scenes) - 1): ?>
+                            <?php echo post_button(base_url('?route=scene/move'), '↓', 'btn btn-sm btn-secondary', null, ['id' => $scene['id'], 'direction' => 'down']); ?>
+                        <?php endif; ?>
+                        <?php echo post_button(base_url('?route=scene/delete'), 'Delete', 'btn btn-sm btn-danger', 'Delete this scene and its hotspots?', ['id' => $scene['id']]); ?>
                     </div>
                 </div>
             <?php endforeach; ?>

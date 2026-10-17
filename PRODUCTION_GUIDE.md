@@ -7,7 +7,9 @@ Complete guide for deploying Splash360 Tour to production.
 ### Security
 - [ ] Change all default passwords
 - [ ] Generate new secure database credentials
-- [ ] Remove or protect `verify.php` file
+- [ ] Run `php verify.php` (CLI only; it is outside the public web root)
+- [ ] Set a random `APP_KEY` and `APP_ENV=production`
+- [ ] Schedule `php bin/cron.php` hourly; run `php bin/migrate.php` after each upgrade
 - [ ] Set up SSL/HTTPS
 - [ ] Configure firewall rules
 - [ ] Disable PHP error display
@@ -206,7 +208,7 @@ sudo certbot --apache -d yourdomain.com
    - If mod_rewrite issues, contact hosting support
 
 5. **Test installation:**
-   - Access `yourdomain.com/verify.php`
+   - Run `php verify.php` on the server
    - Fix any reported issues
 
 ## Production Configuration
@@ -388,6 +390,9 @@ crontab -e
 
 # Daily backup at 2 AM
 0 2 * * * /usr/local/bin/backup-splash360.sh >> /var/log/backup-splash360.log 2>&1
+
+# Hourly: subscription renewals, trial expiry, token cleanup
+0 * * * * php /var/www/html/bin/cron.php >> /var/www/html/storage/logs/cron.log 2>&1
 ```
 
 ### Monitoring

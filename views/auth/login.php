@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - Splash360 Tour</title>
+    <title>Login - <?php echo e(config('name')); ?></title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="<?php echo asset('css/style.css'); ?>">
 </head>
 <body>
@@ -14,16 +15,16 @@
             <?php require __DIR__ . '/../partials/flash.php'; ?>
 
             <form method="POST">
-                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                <?php echo csrf_field(); ?>
 
                 <div class="form-group">
                     <label class="form-label">Email</label>
-                    <input type="email" name="email" class="form-control" required>
+                    <input type="email" name="email" class="form-control" required autocomplete="email" autofocus>
                 </div>
 
                 <div class="form-group">
                     <label class="form-label">Password</label>
-                    <input type="password" name="password" class="form-control" required>
+                    <input type="password" name="password" class="form-control" required autocomplete="current-password">
                 </div>
 
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Login</button>

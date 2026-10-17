@@ -7,6 +7,9 @@ require_once __DIR__ . '/BaseModel.php';
 
 class User extends BaseModel
 {
+    const TENANT_ROLES = ['tenant_admin', 'agent'];
+    const STATUSES = ['active', 'inactive'];
+
     protected $table = 'users';
     protected $fillable = ['tenant_id', 'email', 'password', 'first_name', 'last_name', 'role', 'status'];
 
@@ -60,6 +63,23 @@ class User extends BaseModel
      */
     public function getByTenant($tenantId)
     {
-        return $this->where(['tenant_id' => $tenantId], 'created_at', 'DESC');
+        return $this->where(['tenant_id' => $tenantId], 'id', 'ASC');
+    }
+
+    /**
+     * Update password (hashes it)
+     */
+    public function updatePassword($userId, $password)
+    {
+        $sql = "UPDATE {$this->table} SET password = ? WHERE id = ?";
+        $this->query($sql, [password_hash($password, PASSWORD_DEFAULT), $userId]);
+    }
+
+    /**
+     * Count active tenant admins (prevents removing the last one)
+     */
+    public function countActiveAdmins($tenantId)
+    {
+        return $this->count(['tenant_id' => $tenantId, 'role' => 'tenant_admin', 'status' => 'active']);
     }
 }

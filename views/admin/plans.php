@@ -28,9 +28,9 @@ ob_start();
                     <td><strong><?php echo e($plan['name']); ?></strong></td>
                     <td><?php echo format_currency($plan['price_monthly']); ?></td>
                     <td><?php echo format_currency($plan['price_yearly']); ?></td>
-                    <td><?php echo $plan['max_properties'] >= 9999 ? 'Unlimited' : $plan['max_properties']; ?></td>
-                    <td><?php echo $plan['max_active_tours'] >= 9999 ? 'Unlimited' : $plan['max_active_tours']; ?></td>
-                    <td><?php echo $plan['max_scenes'] >= 9999 ? 'Unlimited' : $plan['max_scenes']; ?></td>
+                    <td><?php echo e(format_limit($plan['max_properties'])); ?></td>
+                    <td><?php echo e(format_limit($plan['max_active_tours'])); ?></td>
+                    <td><?php echo e(format_limit($plan['max_scenes'])); ?></td>
                     <td><span class="badge badge-<?php echo $plan['is_active'] ? 'success' : 'danger'; ?>"><?php echo $plan['is_active'] ? 'Active' : 'Inactive'; ?></span></td>
                     <td>
                         <a href="<?php echo base_url('?route=admin/plan-edit&id=' . $plan['id']); ?>" class="btn btn-sm btn-secondary">Edit</a>

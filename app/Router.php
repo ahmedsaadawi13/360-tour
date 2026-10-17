@@ -77,8 +77,7 @@ class Router
         }
 
         // No route found
-        http_response_code(404);
-        view('errors.404');
+        abort_404();
     }
 
     /**
@@ -91,8 +90,16 @@ class Router
             return '/' . trim($_GET['route'], '/');
         }
 
-        $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-        return $uri;
+        $uri = parse_url($_SERVER['REQUEST_URI'] ?? '/', PHP_URL_PATH) ?: '/';
+
+        // Support installs in a sub-directory (APP_URL=http://host/app)
+        $basePath = rtrim((string) parse_url(config('base_url'), PHP_URL_PATH), '/');
+        if ($basePath !== '' && strpos($uri, $basePath) === 0) {
+            $uri = substr($uri, strlen($basePath));
+        }
+
+        $uri = '/' . trim($uri, '/');
+        return $uri === '/index.php' ? '/' : $uri;
     }
 
     /**
@@ -113,21 +120,21 @@ class Router
         $controllerFile = __DIR__ . '/Controllers/' . $controllerName . '.php';
 
         if (!file_exists($controllerFile)) {
-            die("Controller not found: {$controllerName}");
+            throw new RuntimeException("Controller not found: {$controllerName}");
         }
 
         require_once $controllerFile;
 
         if (!class_exists($controllerName)) {
-            die("Controller class not found: {$controllerName}");
+            throw new RuntimeException("Controller class not found: {$controllerName}");
         }
 
         $controller = new $controllerName();
 
         if (!method_exists($controller, $action)) {
-            die("Action not found: {$controllerName}@{$action}");
+            throw new RuntimeException("Action not found: {$controllerName}@{$action}");
         }
 
-        call_user_func_array([$controller, $action], $params);
+        call_user_func_array([$controller, $action], array_map('urldecode', $params));
     }
 }

@@ -15,6 +15,7 @@ ob_start();
                 <th>Status</th>
                 <th>Due Date</th>
                 <th>Paid Date</th>
+                <th></th>
             </tr>
         </thead>
         <tbody>
@@ -26,11 +27,12 @@ ob_start();
                         <td><span class="badge badge-<?php echo $invoice['status'] === 'paid' ? 'success' : 'warning'; ?>"><?php echo e($invoice['status']); ?></span></td>
                         <td><?php echo format_date($invoice['due_date'], 'Y-m-d'); ?></td>
                         <td><?php echo $invoice['paid_at'] ? format_date($invoice['paid_at'], 'Y-m-d') : '-'; ?></td>
+                        <td><a href="<?php echo base_url('?route=subscription/invoice&id=' . $invoice['id']); ?>" class="btn btn-sm btn-secondary" target="_blank">View / Print</a></td>
                     </tr>
                 <?php endforeach; ?>
             <?php else: ?>
                 <tr>
-                    <td colspan="5" class="text-center">No invoices yet</td>
+                    <td colspan="6" class="text-center">No invoices yet</td>
                 </tr>
             <?php endif; ?>
         </tbody>
@@ -57,7 +59,7 @@ ob_start();
                         <td><?php echo e($payment['invoice_number'] ?? 'N/A'); ?></td>
                         <td><?php echo format_currency($payment['amount'], $payment['currency']); ?></td>
                         <td><?php echo e($payment['method']); ?></td>
-                        <td><span class="badge badge-success"><?php echo e($payment['status']); ?></span></td>
+                        <td><span class="badge badge-<?php echo $payment['status'] === 'completed' ? 'success' : 'danger'; ?>"><?php echo e($payment['status']); ?></span></td>
                     </tr>
                 <?php endforeach; ?>
             <?php else: ?>

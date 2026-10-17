@@ -31,7 +31,8 @@ class BaseModel
      */
     public function all($orderBy = 'id', $direction = 'DESC')
     {
-        $stmt = $this->db->prepare("SELECT * FROM {$this->table} ORDER BY {$orderBy} {$direction}");
+        $orderClause = $this->orderClause($orderBy, $direction);
+        $stmt = $this->db->prepare("SELECT * FROM {$this->table} ORDER BY {$orderClause}");
         $stmt->execute();
         return $stmt->fetchAll();
     }
@@ -95,7 +96,8 @@ class BaseModel
         }
 
         $whereClause = implode(' AND ', $whereParts);
-        $sql = "SELECT * FROM {$this->table} WHERE {$whereClause} ORDER BY {$orderBy} {$direction}";
+        $orderClause = $this->orderClause($orderBy, $direction);
+        $sql = "SELECT * FROM {$this->table} WHERE {$whereClause} ORDER BY {$orderClause}";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($values);
@@ -146,7 +148,47 @@ class BaseModel
         }
 
         $result = $stmt->fetch();
-        return $result['count'];
+        return (int) $result['count'];
+    }
+
+    /**
+     * Find a record by ID scoped to a tenant
+     */
+    public function findForTenant($id, $tenantId)
+    {
+        return $this->first(['id' => $id, 'tenant_id' => $tenantId]);
+    }
+
+    /**
+     * Transaction helpers (all models share one PDO connection)
+     */
+    public function beginTransaction()
+    {
+        $this->db->beginTransaction();
+    }
+
+    public function commit()
+    {
+        $this->db->commit();
+    }
+
+    public function rollBack()
+    {
+        if ($this->db->inTransaction()) {
+            $this->db->rollBack();
+        }
+    }
+
+    /**
+     * Build a safe ORDER BY clause (identifiers cannot be bound as parameters)
+     */
+    protected function orderClause($orderBy, $direction)
+    {
+        if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $orderBy)) {
+            $orderBy = 'id';
+        }
+        $direction = strtoupper($direction) === 'ASC' ? 'ASC' : 'DESC';
+        return "{$orderBy} {$direction}";
     }
 
     /**

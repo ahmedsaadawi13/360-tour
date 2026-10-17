@@ -1,22 +1,11 @@
 <?php
-$success = flash('success');
-$error = flash('error');
-$warning = flash('warning');
-$info = flash('info');
+// Flash messages are plain text: escaped here, newlines become line breaks
+foreach (['success', 'error', 'warning', 'info'] as $flashType):
+    $flashMessage = flash($flashType);
+    if ($flashMessage):
 ?>
-
-<?php if ($success): ?>
-    <div class="alert alert-success"><?php echo $success; ?></div>
-<?php endif; ?>
-
-<?php if ($error): ?>
-    <div class="alert alert-error"><?php echo $error; ?></div>
-<?php endif; ?>
-
-<?php if ($warning): ?>
-    <div class="alert alert-warning"><?php echo $warning; ?></div>
-<?php endif; ?>
-
-<?php if ($info): ?>
-    <div class="alert alert-info"><?php echo $info; ?></div>
-<?php endif; ?>
+    <div class="alert alert-<?php echo $flashType; ?>" role="<?php echo $flashType === 'error' ? 'alert' : 'status'; ?>"><?php echo nl2br(e($flashMessage)); ?></div>
+<?php
+    endif;
+endforeach;
+?>

@@ -7,13 +7,13 @@ ob_start();
 
 <div class="card">
     <form method="POST">
-        <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+        <?php echo csrf_field(); ?>
 
         <div class="form-group">
-            <label class="form-label">Property *</label>
-            <select name="property_id" class="form-select" required>
+            <label class="form-label" for="property_id">Property *</label>
+            <select id="property_id" name="property_id" class="form-select" required>
                 <?php foreach ($properties as $property): ?>
-                    <option value="<?php echo $property['id']; ?>" <?php echo $tour['property_id'] == $property['id'] ? 'selected' : ''; ?>>
+                    <option value="<?php echo (int) $property['id']; ?>" <?php echo $tour['property_id'] == $property['id'] ? 'selected' : ''; ?>>
                         <?php echo e($property['title']); ?>
                     </option>
                 <?php endforeach; ?>
@@ -21,29 +21,27 @@ ob_start();
         </div>
 
         <div class="form-group">
-            <label class="form-label">Tour Title *</label>
-            <input type="text" name="title" class="form-control" value="<?php echo e($tour['title']); ?>" required>
+            <label class="form-label" for="title">Tour Title *</label>
+            <input type="text" id="title" name="title" class="form-control" value="<?php echo e($tour['title']); ?>" required maxlength="255">
+            <label class="muted"><input type="checkbox" name="regenerate_slug" value="1"> Update the public link to match a new title (old shared links will stop working)</label>
+            <div class="muted">Current link: <?php echo e(tour_url($tour['slug'])); ?></div>
         </div>
 
         <div class="form-group">
-            <label class="form-label">Description</label>
-            <textarea name="description" class="form-control"><?php echo e($tour['description']); ?></textarea>
+            <label class="form-label" for="description">Description</label>
+            <textarea id="description" name="description" class="form-control" rows="4"><?php echo e($tour['description']); ?></textarea>
         </div>
 
         <div class="form-group">
-            <label class="form-label">Status *</label>
-            <select name="status" class="form-select" required>
+            <label class="form-label" for="status">Status *</label>
+            <select id="status" name="status" class="form-select" required>
                 <option value="draft" <?php echo $tour['status'] === 'draft' ? 'selected' : ''; ?>>Draft</option>
                 <option value="published" <?php echo $tour['status'] === 'published' ? 'selected' : ''; ?>>Published</option>
             </select>
+            <small class="muted">Published tours count towards your plan's active tour limit.</small>
         </div>
 
-        <div class="form-group">
-            <label>
-                <input type="checkbox" name="is_public" value="1" <?php echo $tour['is_public'] ? 'checked' : ''; ?>>
-                Make this tour publicly accessible
-            </label>
-        </div>
+        <?php require __DIR__ . '/_options.php'; ?>
 
         <div class="flex gap-2">
             <button type="submit" class="btn btn-primary">Update Tour</button>

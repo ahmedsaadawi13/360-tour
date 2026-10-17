@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Forgot Password - Splash360 Tour</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="<?php echo asset('css/style.css'); ?>">
 </head>
 <body>
@@ -14,7 +15,7 @@
             <?php require __DIR__ . '/../partials/flash.php'; ?>
 
             <form method="POST">
-                <input type="hidden" name="csrf_token" value="<?php echo csrf_token(); ?>">
+                <?php echo csrf_field(); ?>
 
                 <div class="form-group">
                     <label class="form-label">Email</label>

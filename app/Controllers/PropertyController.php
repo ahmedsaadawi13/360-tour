@@ -5,10 +5,6 @@
  * Handles property CRUD operations
  */
 
-require_once __DIR__ . '/../Middleware/TenantMiddleware.php';
-require_once __DIR__ . '/../Models/Property.php';
-require_once __DIR__ . '/../Models/TenantSubscription.php';
-
 class PropertyController
 {
     private $propertyModel;
@@ -29,15 +25,19 @@ class PropertyController
         $tenantId = current_tenant_id();
 
         $filters = [
-            'type' => get_param('type'),
-            'status' => get_param('status'),
-            'city' => get_param('city'),
-            'search' => get_param('search')
+            'type' => enum_value(get_param('type'), Property::TYPES),
+            'status' => enum_value(get_param('status'), Property::STATUSES),
+            'city' => sanitize(get_param('city')),
+            'search' => sanitize(get_param('search'))
         ];
 
         $properties = $this->propertyModel->getByTenantFiltered($tenantId, $filters);
 
-        view('property.index', ['properties' => $properties, 'filters' => $filters]);
+        view('property.index', [
+            'properties' => $properties,
+            'filters' => $filters,
+            'cities' => $this->propertyModel->getCities($tenantId)
+        ]);
     }
 
     /**
@@ -47,57 +47,48 @@ class PropertyController
     {
         $tenantId = current_tenant_id();
 
-        // Check quota
         $currentCount = $this->propertyModel->count(['tenant_id' => $tenantId]);
         if (!$this->subscriptionModel->checkQuota($tenantId, 'properties', $currentCount)) {
-            flash('error', 'Property limit reached. Please upgrade your plan.');
+            flash('error', 'Property limit reached or subscription inactive. Please upgrade your plan.');
             redirect(base_url('?route=property'));
         }
 
-        if (is_post()) {
-            if (!csrf_verify(post('csrf_token'))) {
-                flash('error', 'Invalid request');
-                redirect(base_url('?route=property/create'));
-            }
-
-            $data = [
-                'tenant_id' => $tenantId,
-                'title' => sanitize(post('title')),
-                'reference_code' => sanitize(post('reference_code')),
-                'type' => sanitize(post('type')),
-                'status' => sanitize(post('status')),
-                'price' => post('price') ? (float) post('price') : null,
-                'currency' => sanitize(post('currency')),
-                'city' => sanitize(post('city')),
-                'area' => sanitize(post('area')),
-                'address' => sanitize(post('address')),
-                'bedrooms' => post('bedrooms') ? (int) post('bedrooms') : null,
-                'bathrooms' => post('bathrooms') ? (int) post('bathrooms') : null,
-                'size' => post('size') ? (float) post('size') : null,
-                'description' => sanitize(post('description')),
-                'created_by' => session_get('user_id')
-            ];
-
-            // Handle image upload
-            if (isset($_FILES['main_image']) && $_FILES['main_image']['error'] === UPLOAD_ERR_OK) {
-                $uploadResult = upload_file(
-                    $_FILES['main_image'],
-                    __DIR__ . '/../../public/uploads/properties',
-                    ['image/jpeg', 'image/jpg', 'image/png']
-                );
-
-                if ($uploadResult['success']) {
-                    $data['main_image'] = '/uploads/properties/' . $uploadResult['filename'];
-                }
-            }
-
-            $propertyId = $this->propertyModel->create($data);
-
-            flash('success', 'Property created successfully');
-            redirect(base_url('?route=property/view&id=' . $propertyId));
-        } else {
+        if (!is_post()) {
             view('property.create');
+            return;
         }
+
+        if (!csrf_verify(post('csrf_token'))) {
+            flash('error', 'Invalid request');
+            redirect(base_url('?route=property/create'));
+        }
+
+        $data = $this->collectInput();
+        $errors = $this->validate($data);
+
+        if (!$errors && has_upload('main_image')) {
+            $upload = $this->uploadImage();
+            if ($upload['success']) {
+                $data['main_image'] = '/uploads/properties/' . $upload['filename'];
+            } else {
+                $errors[] = 'Image: ' . $upload['message'];
+            }
+        }
+
+        if ($errors) {
+            flash('error', implode("\n", $errors));
+            set_old_input($_POST);
+            view('property.create');
+            return;
+        }
+
+        clear_old_input();
+        $data['tenant_id'] = $tenantId;
+        $data['created_by'] = session_get('user_id');
+        $propertyId = $this->propertyModel->create($data);
+
+        flash('success', 'Property created successfully');
+        redirect(base_url('?route=property/view&id=' . $propertyId));
     }
 
     /**
@@ -115,7 +106,9 @@ class PropertyController
             redirect(base_url('?route=property'));
         }
 
-        view('property.view', ['property' => $property]);
+        $tours = (new Tour())->getByTenant($tenantId, $propertyId);
+
+        view('property.view', ['property' => $property, 'tours' => $tours]);
     }
 
     /**
@@ -126,79 +119,127 @@ class PropertyController
         $tenantId = current_tenant_id();
         $propertyId = (int) get_param('id');
 
-        $property = $this->propertyModel->first(['id' => $propertyId, 'tenant_id' => $tenantId]);
+        $property = $this->propertyModel->findForTenant($propertyId, $tenantId);
 
         if (!$property) {
             flash('error', 'Property not found');
             redirect(base_url('?route=property'));
         }
 
-        if (is_post()) {
-            if (!csrf_verify(post('csrf_token'))) {
-                flash('error', 'Invalid request');
-                redirect(base_url('?route=property/edit&id=' . $propertyId));
-            }
-
-            $data = [
-                'title' => sanitize(post('title')),
-                'reference_code' => sanitize(post('reference_code')),
-                'type' => sanitize(post('type')),
-                'status' => sanitize(post('status')),
-                'price' => post('price') ? (float) post('price') : null,
-                'currency' => sanitize(post('currency')),
-                'city' => sanitize(post('city')),
-                'area' => sanitize(post('area')),
-                'address' => sanitize(post('address')),
-                'bedrooms' => post('bedrooms') ? (int) post('bedrooms') : null,
-                'bathrooms' => post('bathrooms') ? (int) post('bathrooms') : null,
-                'size' => post('size') ? (float) post('size') : null,
-                'description' => sanitize(post('description'))
-            ];
-
-            // Handle image upload
-            if (isset($_FILES['main_image']) && $_FILES['main_image']['error'] === UPLOAD_ERR_OK) {
-                $uploadResult = upload_file(
-                    $_FILES['main_image'],
-                    __DIR__ . '/../../public/uploads/properties',
-                    ['image/jpeg', 'image/jpg', 'image/png']
-                );
-
-                if ($uploadResult['success']) {
-                    $data['main_image'] = '/uploads/properties/' . $uploadResult['filename'];
-                }
-            }
-
-            $this->propertyModel->update($propertyId, $data);
-
-            flash('success', 'Property updated successfully');
-            redirect(base_url('?route=property/view&id=' . $propertyId));
-        } else {
+        if (!is_post()) {
             view('property.edit', ['property' => $property]);
+            return;
         }
+
+        if (!csrf_verify(post('csrf_token'))) {
+            flash('error', 'Invalid request');
+            redirect(base_url('?route=property/edit&id=' . $propertyId));
+        }
+
+        $data = $this->collectInput();
+        $errors = $this->validate($data);
+
+        if (!$errors && has_upload('main_image')) {
+            $upload = $this->uploadImage();
+            if ($upload['success']) {
+                $data['main_image'] = '/uploads/properties/' . $upload['filename'];
+            } else {
+                $errors[] = 'Image: ' . $upload['message'];
+            }
+        }
+
+        if ($errors) {
+            flash('error', implode("\n", $errors));
+            view('property.edit', ['property' => array_merge($property, $data)]);
+            return;
+        }
+
+        $this->propertyModel->update($propertyId, $data);
+
+        if (isset($data['main_image']) && $property['main_image']) {
+            delete_upload($property['main_image']);
+        }
+
+        flash('success', 'Property updated successfully');
+        redirect(base_url('?route=property/view&id=' . $propertyId));
     }
 
     /**
-     * Delete property
+     * Delete property (and its tours, scenes and files)
      */
     public function delete()
     {
         $tenantId = current_tenant_id();
-        $propertyId = (int) get_param('id');
+        $propertyId = (int) post('id');
 
-        if (!csrf_verify(get_param('csrf_token'))) {
+        if (!csrf_verify(post('csrf_token'))) {
             flash('error', 'Invalid request');
             redirect(base_url('?route=property'));
         }
 
-        $property = $this->propertyModel->first(['id' => $propertyId, 'tenant_id' => $tenantId]);
+        $property = $this->propertyModel->findForTenant($propertyId, $tenantId);
 
-        if ($property) {
-            $this->propertyModel->delete($propertyId);
-            flash('success', 'Property deleted successfully');
-        } else {
+        if (!$property) {
             flash('error', 'Property not found');
+            redirect(base_url('?route=property'));
         }
 
+        // Collect scene files before the cascade removes their rows
+        $sceneModel = new Scene();
+        $files = [$property['main_image']];
+        foreach ((new Tour())->getByProperty($propertyId, $tenantId) as $tour) {
+            foreach ($sceneModel->getByTour($tour['id'], $tenantId) as $scene) {
+                $files[] = $scene['image_path'];
+                $files[] = $scene['thumbnail_path'];
+            }
+        }
+
+        $this->propertyModel->delete($propertyId);
+        array_map('delete_upload', $files);
+
+        flash('success', 'Property deleted successfully');
         redirect(base_url('?route=property'));
+    }
+
+    /**
+     * Read property fields from the request
+     */
+    private function collectInput()
+    {
+        $currency = strtoupper(sanitize(post('currency')));
+
+        return [
+            'title' => sanitize(post('title')),
+            'reference_code' => sanitize(post('reference_code')) ?: null,
+            'type' => enum_value(post('type'), Property::TYPES, 'other'),
+            'status' => enum_value(post('status'), Property::STATUSES, 'for_sale'),
+            'price' => float_or_null(post('price')),
+            'currency' => preg_match('/^[A-Z]{3}$/', $currency) ? $currency : config('default_currency'),
+            'city' => sanitize(post('city')),
+            'area' => sanitize(post('area')),
+            'address' => sanitize(post('address')),
+            'bedrooms' => int_or_null(post('bedrooms')),
+            'bathrooms' => int_or_null(post('bathrooms')),
+            'size' => float_or_null(post('size')),
+            'description' => sanitize(post('description')),
+        ];
+    }
+
+    private function validate(array $data)
+    {
+        $errors = [];
+        if ($data['title'] === '') $errors[] = 'Title is required';
+        if (mb_strlen($data['title']) > 255) $errors[] = 'Title is too long';
+        foreach (['price', 'size', 'bedrooms', 'bathrooms'] as $field) {
+            if ($data[$field] !== null && $data[$field] < 0) {
+                $errors[] = humanize($field) . ' cannot be negative';
+            }
+        }
+        return $errors;
+    }
+
+    private function uploadImage()
+    {
+        return upload_file($_FILES['main_image'], config('upload_path') . '/properties');
     }
 }

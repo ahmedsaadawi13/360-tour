@@ -1,64 +1,94 @@
 <?php
 $pageTitle = 'Dashboard';
+$limit = function ($key) use ($subscription) {
+    return $subscription ? format_limit($subscription[$key]) : '0';
+};
 ob_start();
 ?>
 
 <div class="flex-between mb-3">
-    <h2>Dashboard</h2>
+    <h2><?php echo e($tenant['name']); ?></h2>
+    <div class="flex gap-1">
+        <a href="<?php echo base_url('?route=property/create'); ?>" class="btn btn-secondary">+ Property</a>
+        <a href="<?php echo base_url('?route=tour/create'); ?>" class="btn btn-primary">+ Tour</a>
+    </div>
 </div>
 
-<?php if ($trialDays > 0 && $subscription['status'] === 'trialing'): ?>
-    <div class="alert alert-warning">
-        Your trial ends in <?php echo $trialDays; ?> days. <a href="<?php echo base_url('?route=subscription'); ?>">Upgrade now</a> to continue using all features.
+<?php if (!$subscription): ?>
+    <div class="alert alert-error">
+        Your subscription is inactive — public tours are offline and you cannot add content.
+        <?php if (is_tenant_admin()): ?><a href="<?php echo base_url('?route=subscription'); ?>">Choose a plan</a> to continue.<?php else: ?>Please contact your company administrator.<?php endif; ?>
     </div>
+<?php elseif ($subscription['status'] === 'trialing'): ?>
+    <div class="alert alert-warning">
+        Your trial ends in <?php echo (int) $trialDays; ?> day<?php echo $trialDays == 1 ? '' : 's'; ?>.
+        <?php if (is_tenant_admin()): ?><a href="<?php echo base_url('?route=subscription'); ?>">Upgrade now</a> to keep your tours online.<?php endif; ?>
+    </div>
+<?php elseif ($subscription['status'] === 'past_due'): ?>
+    <div class="alert alert-error">Your last payment failed. Please update your billing to avoid interruption.</div>
 <?php endif; ?>
 
 <div class="stats-grid">
     <div class="stat-card">
-        <h3><?php echo $stats['properties']; ?></h3>
-        <p>Total Properties</p>
-        <small>Limit: <?php echo $subscription['max_properties'] >= 9999 ? 'Unlimited' : $subscription['max_properties']; ?></small>
+        <h3><?php echo (int) $stats['properties']; ?></h3>
+        <p>Properties</p>
+        <small>Limit: <?php echo e($limit('max_properties')); ?></small>
     </div>
-
     <div class="stat-card">
-        <h3><?php echo $stats['active_tours']; ?></h3>
-        <p>Active Tours</p>
-        <small>Limit: <?php echo $subscription['max_active_tours'] >= 9999 ? 'Unlimited' : $subscription['max_active_tours']; ?></small>
+        <h3><?php echo (int) $stats['active_tours']; ?></h3>
+        <p>Published Tours</p>
+        <small>Limit: <?php echo e($limit('max_active_tours')); ?></small>
     </div>
-
     <div class="stat-card">
-        <h3><?php echo $stats['scenes']; ?></h3>
-        <p>Total Scenes</p>
-        <small>Limit: <?php echo $subscription['max_scenes'] >= 9999 ? 'Unlimited' : $subscription['max_scenes']; ?></small>
+        <h3><?php echo (int) $stats['scenes']; ?></h3>
+        <p>Scenes</p>
+        <small>Limit: <?php echo e($limit('max_scenes')); ?></small>
     </div>
-
     <div class="stat-card">
-        <h3><?php echo $stats['users']; ?></h3>
-        <p>Users</p>
-        <small>Limit: <?php echo $subscription['max_users']; ?></small>
+        <h3><?php echo number_format($views30); ?></h3>
+        <p>Tour Views</p>
+        <small>Last 30 days</small>
+    </div>
+    <div class="stat-card">
+        <h3><?php echo (int) $leadCounts['new']; ?></h3>
+        <p>New Leads</p>
+        <small><a href="<?php echo base_url('?route=lead&status=new'); ?>">Follow up →</a></small>
     </div>
 </div>
 
-<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+<div class="grid-3">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Recent Leads</h3>
+        </div>
+        <?php if ($recentLeads): ?>
+            <table class="table">
+                <tbody>
+                    <?php foreach ($recentLeads as $lead): ?>
+                        <tr>
+                            <td><a href="<?php echo base_url('?route=lead/view&id=' . $lead['id']); ?>"><?php echo e($lead['name']); ?></a>
+                                <div class="muted"><?php echo e($lead['tour_title']); ?></div></td>
+                            <td><span class="badge badge-<?php echo $lead['status'] === 'new' ? 'warning' : 'info'; ?>"><?php echo e($lead['status']); ?></span></td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <p class="muted">No leads yet. Publish a tour with the lead form enabled.</p>
+        <?php endif; ?>
+    </div>
+
     <div class="card">
         <div class="card-header">
             <h3 class="card-title">Recent Properties</h3>
         </div>
         <?php if (!empty($recentProperties)): ?>
             <table class="table">
-                <thead>
-                    <tr>
-                        <th>Title</th>
-                        <th>Type</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
                 <tbody>
                     <?php foreach ($recentProperties as $property): ?>
                         <tr>
                             <td><a href="<?php echo base_url('?route=property/view&id=' . $property['id']); ?>"><?php echo e($property['title']); ?></a></td>
-                            <td><?php echo e($property['type']); ?></td>
-                            <td><span class="badge badge-info"><?php echo e($property['status']); ?></span></td>
+                            <td><span class="badge badge-info"><?php echo e(humanize($property['status'])); ?></span></td>
                         </tr>
                     <?php endforeach; ?>
                 </tbody>
@@ -74,18 +104,11 @@ ob_start();
         </div>
         <?php if (!empty($recentTours)): ?>
             <table class="table">
-                <thead>
-                    <tr>
-                        <th>Title</th>
-                        <th>Property</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
                 <tbody>
                     <?php foreach ($recentTours as $tour): ?>
                         <tr>
-                            <td><a href="<?php echo base_url('?route=tour/view&id=' . $tour['id']); ?>"><?php echo e($tour['title']); ?></a></td>
-                            <td><?php echo e($tour['property_title']); ?></td>
+                            <td><a href="<?php echo base_url('?route=tour/view&id=' . $tour['id']); ?>"><?php echo e($tour['title']); ?></a>
+                                <div class="muted"><?php echo (int) $tour['views_count']; ?> views</div></td>
                             <td><span class="badge <?php echo $tour['status'] === 'published' ? 'badge-success' : 'badge-warning'; ?>"><?php echo e($tour['status']); ?></span></td>
                         </tr>
                     <?php endforeach; ?>

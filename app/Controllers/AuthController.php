@@ -5,17 +5,16 @@
  * Handles login, registration, password reset
  */
 
-require_once __DIR__ . '/../Models/User.php';
-require_once __DIR__ . '/../Models/Tenant.php';
-require_once __DIR__ . '/../Models/Plan.php';
-require_once __DIR__ . '/../Models/TenantSubscription.php';
-
 class AuthController
 {
+    const MIN_PASSWORD_LENGTH = 8;
+
     private $userModel;
     private $tenantModel;
     private $planModel;
     private $subscriptionModel;
+    private $resetModel;
+    private $attemptModel;
 
     public function __construct()
     {
@@ -23,6 +22,8 @@ class AuthController
         $this->tenantModel = new Tenant();
         $this->planModel = new Plan();
         $this->subscriptionModel = new TenantSubscription();
+        $this->resetModel = new PasswordReset();
+        $this->attemptModel = new LoginAttempt();
     }
 
     /**
@@ -31,45 +32,63 @@ class AuthController
     public function login()
     {
         if (is_authenticated()) {
-            redirect(base_url('?route=dashboard'));
+            redirect(base_url(has_role('platform_admin') ? '?route=admin/dashboard' : '?route=dashboard'));
         }
 
-        if (is_post()) {
-            $email = sanitize(post('email'));
-            $password = post('password');
+        if (!is_post()) {
+            view('auth.login');
+            return;
+        }
 
-            if (!csrf_verify(post('csrf_token'))) {
-                flash('error', 'Invalid request');
-                redirect(base_url('?route=auth/login'));
-            }
+        if (!csrf_verify(post('csrf_token'))) {
+            flash('error', 'Your session expired, please try again');
+            redirect(base_url('?route=auth/login'));
+        }
 
-            if (empty($email) || empty($password)) {
-                flash('error', 'Email and password are required');
+        $email = strtolower(sanitize(post('email')));
+        $password = (string) post('password');
+
+        if (empty($email) || $password === '') {
+            flash('error', 'Email and password are required');
+            view('auth.login');
+            return;
+        }
+
+        if ($this->attemptModel->isLockedOut($email, client_ip())) {
+            flash('error', 'Too many failed attempts. Please try again in ' . config('login_lockout_minutes') . ' minutes.');
+            view('auth.login');
+            return;
+        }
+
+        $user = $this->userModel->verifyPassword($email, $password);
+
+        if (!$user || $user['status'] !== 'active') {
+            $this->attemptModel->recordFailure($email, client_ip());
+            flash('error', 'Invalid credentials or account inactive');
+            view('auth.login');
+            return;
+        }
+
+        if ($user['tenant_id']) {
+            $tenant = $this->tenantModel->find($user['tenant_id']);
+            if (!$tenant || $tenant['status'] !== 'active') {
+                flash('error', 'Your company account is suspended. Please contact support.');
                 view('auth.login');
                 return;
             }
-
-            $user = $this->userModel->verifyPassword($email, $password);
-
-            if ($user && $user['status'] === 'active') {
-                session_set('user_id', $user['id']);
-                session_set('user', $user);
-                $this->userModel->updateLastLogin($user['id']);
-
-                flash('success', 'Welcome back!');
-
-                if ($user['role'] === 'platform_admin') {
-                    redirect(base_url('?route=admin/dashboard'));
-                } else {
-                    redirect(base_url('?route=dashboard'));
-                }
-            } else {
-                flash('error', 'Invalid credentials or account inactive');
-                view('auth.login');
-            }
-        } else {
-            view('auth.login');
         }
+
+        // Transparently upgrade old hashes
+        if (password_needs_rehash($user['password'], PASSWORD_DEFAULT)) {
+            $this->userModel->updatePassword($user['id'], $password);
+        }
+
+        $this->attemptModel->clear($email);
+        login_user($user);
+        $this->userModel->updateLastLogin($user['id']);
+
+        flash('success', 'Welcome back!');
+        redirect(base_url($user['role'] === 'platform_admin' ? '?route=admin/dashboard' : '?route=dashboard'));
     }
 
     /**
@@ -83,61 +102,56 @@ class AuthController
 
         $plans = $this->planModel->getActivePlans();
 
-        if (is_post()) {
-            if (!csrf_verify(post('csrf_token'))) {
-                flash('error', 'Invalid request');
-                redirect(base_url('?route=auth/register'));
-            }
+        if (!is_post()) {
+            view('auth.register', ['plans' => $plans, 'selectedPlan' => get_param('plan')]);
+            return;
+        }
 
-            // Validate input
-            $errors = [];
+        if (!csrf_verify(post('csrf_token'))) {
+            flash('error', 'Your session expired, please try again');
+            redirect(base_url('?route=auth/register'));
+        }
 
-            $companyName = sanitize(post('company_name'));
-            $email = sanitize(post('email'));
-            $firstName = sanitize(post('first_name'));
-            $lastName = sanitize(post('last_name'));
-            $password = post('password');
-            $passwordConfirm = post('password_confirm');
-            $planId = (int) post('plan_id');
+        $errors = [];
 
-            if (empty($companyName)) $errors[] = 'Company name is required';
-            if (empty($email) || !is_valid_email($email)) $errors[] = 'Valid email is required';
-            if (empty($firstName)) $errors[] = 'First name is required';
-            if (empty($lastName)) $errors[] = 'Last name is required';
-            if (empty($password) || strlen($password) < 6) $errors[] = 'Password must be at least 6 characters';
-            if ($password !== $passwordConfirm) $errors[] = 'Passwords do not match';
-            if (!$planId) $errors[] = 'Please select a plan';
+        $companyName = sanitize(post('company_name'));
+        $email = strtolower(sanitize(post('email')));
+        $firstName = sanitize(post('first_name'));
+        $lastName = sanitize(post('last_name'));
+        $password = (string) post('password');
+        $passwordConfirm = (string) post('password_confirm');
+        $planId = (int) post('plan_id');
+        $plan = $planId ? $this->planModel->find($planId) : null;
 
-            // Check if email already exists
-            if ($this->userModel->findByEmail($email)) {
-                $errors[] = 'Email already registered';
-            }
+        if ($companyName === '') $errors[] = 'Company name is required';
+        if ($email === '' || !is_valid_email($email)) $errors[] = 'Valid email is required';
+        if ($firstName === '') $errors[] = 'First name is required';
+        if ($lastName === '') $errors[] = 'Last name is required';
+        if (strlen($password) < self::MIN_PASSWORD_LENGTH) $errors[] = 'Password must be at least ' . self::MIN_PASSWORD_LENGTH . ' characters';
+        if ($password !== $passwordConfirm) $errors[] = 'Passwords do not match';
+        if (!$plan || !$plan['is_active']) $errors[] = 'Please select a plan';
 
-            if (!empty($errors)) {
-                flash('error', implode('<br>', $errors));
-                set_old_input($_POST);
-                view('auth.register', ['plans' => $plans]);
-                return;
-            }
+        if ($email !== '' && $this->userModel->findByEmail($email)) {
+            $errors[] = 'Email already registered';
+        }
 
-            // Create tenant
-            $tenantSlug = slugify($companyName);
-            $originalSlug = $tenantSlug;
-            $counter = 1;
+        if (!empty($errors)) {
+            flash('error', implode("\n", $errors));
+            set_old_input($_POST);
+            view('auth.register', ['plans' => $plans, 'selectedPlan' => $planId]);
+            return;
+        }
 
-            while ($this->tenantModel->findBySlug($tenantSlug)) {
-                $tenantSlug = $originalSlug . '-' . $counter;
-                $counter++;
-            }
+        try {
+            $this->userModel->beginTransaction();
 
             $tenantId = $this->tenantModel->create([
                 'name' => $companyName,
-                'slug' => $tenantSlug,
+                'slug' => $this->tenantModel->generateUniqueSlug($companyName),
                 'email' => $email,
                 'status' => 'active'
             ]);
 
-            // Create user
             $userId = $this->userModel->createUser([
                 'tenant_id' => $tenantId,
                 'email' => $email,
@@ -148,30 +162,42 @@ class AuthController
                 'status' => 'active'
             ]);
 
-            // Create subscription with trial
-            $config = require __DIR__ . '/../../config/app.php';
-            $trialDays = $config['trial_days'];
-            $this->subscriptionModel->createWithTrial($tenantId, $planId, $trialDays);
+            $this->subscriptionModel->createWithTrial($tenantId, $plan['id'], config('trial_days', 14));
 
-            // Auto login
-            $user = $this->userModel->find($userId);
-            session_set('user_id', $user['id']);
-            session_set('user', $user);
-
-            flash('success', 'Account created successfully! Your trial period has started.');
-            redirect(base_url('?route=dashboard'));
-        } else {
-            view('auth.register', ['plans' => $plans]);
+            $this->userModel->commit();
+        } catch (Throwable $e) {
+            $this->userModel->rollBack();
+            error_log('Registration failed: ' . $e->getMessage());
+            flash('error', 'Could not create your account. Please try again.');
+            set_old_input($_POST);
+            view('auth.register', ['plans' => $plans, 'selectedPlan' => $planId]);
+            return;
         }
+
+        clear_old_input();
+
+        Mailer::send(
+            $email,
+            'Welcome to ' . config('name'),
+            "Hello {$firstName},\n\nYour {$plan['name']} trial has started and lasts " . config('trial_days') . " days.\n"
+            . "Log in at " . base_url('?route=auth/login') . "\n\n" . config('name')
+        );
+
+        login_user($this->userModel->find($userId));
+
+        flash('success', 'Account created successfully! Your trial period has started.');
+        redirect(base_url('?route=dashboard'));
     }
 
     /**
-     * Logout
+     * Logout (POST only, to prevent CSRF logouts)
      */
     public function logout()
     {
-        session_destroy_all();
-        flash('success', 'Logged out successfully');
+        if (csrf_verify(post('csrf_token'))) {
+            session_destroy_all();
+            flash('success', 'Logged out successfully');
+        }
         redirect(base_url('?route=auth/login'));
     }
 
@@ -180,120 +206,89 @@ class AuthController
      */
     public function forgotPassword()
     {
-        if (is_post()) {
-            if (!csrf_verify(post('csrf_token'))) {
-                flash('error', 'Invalid request');
-                redirect(base_url('?route=auth/forgot-password'));
-            }
-
-            $email = sanitize(post('email'));
-
-            if (empty($email) || !is_valid_email($email)) {
-                flash('error', 'Valid email is required');
-                view('auth.forgot_password');
-                return;
-            }
-
-            $user = $this->userModel->findByEmail($email);
-
-            if ($user) {
-                $token = random_string(64);
-                $db = Database::getInstance()->getConnection();
-
-                // Delete old tokens for this email
-                $stmt = $db->prepare("DELETE FROM password_resets WHERE email = ?");
-                $stmt->execute([$email]);
-
-                // Create new token
-                $stmt = $db->prepare("INSERT INTO password_resets (email, token) VALUES (?, ?)");
-                $stmt->execute([$email, $token]);
-
-                // In production, send email here
-                // For now, just flash the reset link
-                $resetLink = base_url("?route=auth/reset-password&token={$token}");
-
-                flash('success', "Password reset link: <a href='{$resetLink}'>{$resetLink}</a>");
-            } else {
-                // Don't reveal if email exists
-                flash('success', 'If that email is registered, a reset link has been sent.');
-            }
-
+        if (!is_post()) {
             view('auth.forgot_password');
-        } else {
-            view('auth.forgot_password');
+            return;
         }
+
+        if (!csrf_verify(post('csrf_token'))) {
+            flash('error', 'Your session expired, please try again');
+            redirect(base_url('?route=auth/forgot-password'));
+        }
+
+        $email = strtolower(sanitize(post('email')));
+
+        if ($email === '' || !is_valid_email($email)) {
+            flash('error', 'Valid email is required');
+            view('auth.forgot_password');
+            return;
+        }
+
+        $user = $this->userModel->findByEmail($email);
+
+        if ($user && $user['status'] === 'active') {
+            $token = $this->resetModel->createToken($email, 1);
+            $resetLink = base_url('?route=auth/reset-password&token=' . $token);
+
+            Mailer::send(
+                $email,
+                'Reset your ' . config('name') . ' password',
+                "Hello {$user['first_name']},\n\nUse the link below to choose a new password. It expires in 1 hour.\n\n"
+                . "{$resetLink}\n\nIf you did not request this, you can ignore this email.\n\n" . config('name')
+            );
+        }
+
+        // Same response whether or not the email exists (no account enumeration)
+        flash('success', 'If that email is registered, a reset link has been sent.');
+        redirect(base_url('?route=auth/forgot-password'));
     }
 
     /**
-     * Show reset password page
+     * Show reset password page (also used to accept team invitations)
      */
     public function resetPassword()
     {
-        $token = get_param('token');
+        $token = (string) (is_post() ? post('token') : get_param('token'));
+        $reset = $this->resetModel->findValid($token);
 
-        if (!$token) {
-            flash('error', 'Invalid reset token');
-            redirect(base_url('?route=auth/login'));
+        if (!$reset) {
+            flash('error', 'Invalid or expired reset link');
+            redirect(base_url('?route=auth/forgot-password'));
         }
 
-        $db = Database::getInstance()->getConnection();
-
-        if (is_post()) {
-            if (!csrf_verify(post('csrf_token'))) {
-                flash('error', 'Invalid request');
-                redirect(base_url('?route=auth/reset-password&token=' . $token));
-            }
-
-            $password = post('password');
-            $passwordConfirm = post('password_confirm');
-
-            if (empty($password) || strlen($password) < 6) {
-                flash('error', 'Password must be at least 6 characters');
-                view('auth.reset_password', ['token' => $token]);
-                return;
-            }
-
-            if ($password !== $passwordConfirm) {
-                flash('error', 'Passwords do not match');
-                view('auth.reset_password', ['token' => $token]);
-                return;
-            }
-
-            // Verify token (valid for 1 hour)
-            $stmt = $db->prepare("SELECT * FROM password_resets WHERE token = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
-            $stmt->execute([$token]);
-            $reset = $stmt->fetch();
-
-            if (!$reset) {
-                flash('error', 'Invalid or expired reset token');
-                redirect(base_url('?route=auth/login'));
-            }
-
-            // Update password
-            $user = $this->userModel->findByEmail($reset['email']);
-            $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-
-            $stmt = $db->prepare("UPDATE users SET password = ? WHERE id = ?");
-            $stmt->execute([$hashedPassword, $user['id']]);
-
-            // Delete token
-            $stmt = $db->prepare("DELETE FROM password_resets WHERE token = ?");
-            $stmt->execute([$token]);
-
-            flash('success', 'Password reset successfully. Please login.');
-            redirect(base_url('?route=auth/login'));
-        } else {
-            // Verify token exists
-            $stmt = $db->prepare("SELECT * FROM password_resets WHERE token = ? AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)");
-            $stmt->execute([$token]);
-            $reset = $stmt->fetch();
-
-            if (!$reset) {
-                flash('error', 'Invalid or expired reset token');
-                redirect(base_url('?route=auth/login'));
-            }
-
+        if (!is_post()) {
             view('auth.reset_password', ['token' => $token]);
+            return;
         }
+
+        if (!csrf_verify(post('csrf_token'))) {
+            flash('error', 'Your session expired, please try again');
+            redirect(base_url('?route=auth/reset-password&token=' . urlencode($token)));
+        }
+
+        $password = (string) post('password');
+        $passwordConfirm = (string) post('password_confirm');
+
+        if (strlen($password) < self::MIN_PASSWORD_LENGTH) {
+            flash('error', 'Password must be at least ' . self::MIN_PASSWORD_LENGTH . ' characters');
+            view('auth.reset_password', ['token' => $token]);
+            return;
+        }
+
+        if ($password !== $passwordConfirm) {
+            flash('error', 'Passwords do not match');
+            view('auth.reset_password', ['token' => $token]);
+            return;
+        }
+
+        $user = $this->userModel->findByEmail($reset['email']);
+        if ($user) {
+            $this->userModel->updatePassword($user['id'], $password);
+        }
+        $this->resetModel->deleteForEmail($reset['email']);
+        $this->attemptModel->clear($reset['email']);
+
+        flash('success', 'Password updated. Please login.');
+        redirect(base_url('?route=auth/login'));
     }
 }

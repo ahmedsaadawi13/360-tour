@@ -7,8 +7,13 @@ require_once __DIR__ . '/BaseModel.php';
 
 class Tenant extends BaseModel
 {
+    const STATUSES = ['active', 'suspended', 'canceled'];
+
     protected $table = 'tenants';
-    protected $fillable = ['name', 'slug', 'email', 'phone', 'logo', 'address', 'website', 'status'];
+    protected $fillable = [
+        'name', 'slug', 'email', 'phone', 'logo', 'address', 'website',
+        'brand_color', 'webhook_url', 'status'
+    ];
 
     /**
      * Get tenant by slug
@@ -19,13 +24,38 @@ class Tenant extends BaseModel
     }
 
     /**
-     * Get tenant with subscription
+     * Generate a unique tenant slug
+     */
+    public function generateUniqueSlug($name)
+    {
+        $slug = slugify($name);
+        $original = $slug;
+        $counter = 1;
+
+        while ($this->findBySlug($slug)) {
+            $slug = $original . '-' . $counter++;
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Get tenant with its latest subscription.
+     *
+     * Subscription columns are aliased so they do not overwrite the tenant's
+     * own id/status (previously "t.*, ts.*" did exactly that).
      */
     public function getWithSubscription($tenantId)
     {
-        $sql = "SELECT t.*, ts.*, p.name as plan_name
+        $sql = "SELECT t.*,
+                       ts.id AS subscription_id, ts.status AS subscription_status,
+                       ts.billing_cycle, ts.trial_end, ts.current_period_start,
+                       ts.current_period_end, ts.cancel_at_period_end,
+                       p.name AS plan_name
                 FROM tenants t
-                LEFT JOIN tenant_subscriptions ts ON t.id = ts.tenant_id
+                LEFT JOIN tenant_subscriptions ts ON ts.id = (
+                    SELECT MAX(id) FROM tenant_subscriptions WHERE tenant_id = t.id
+                )
                 LEFT JOIN plans p ON ts.plan_id = p.id
                 WHERE t.id = ?
                 LIMIT 1";
@@ -35,28 +65,37 @@ class Tenant extends BaseModel
     }
 
     /**
+     * All tenants with plan name and usage counts in a single query (admin list)
+     */
+    public function getAllWithUsage()
+    {
+        $sql = "SELECT t.*,
+                       p.name AS plan_name, ts.status AS subscription_status,
+                       (SELECT COUNT(*) FROM properties WHERE tenant_id = t.id) AS properties_count,
+                       (SELECT COUNT(*) FROM tours WHERE tenant_id = t.id AND status = 'published') AS active_tours_count,
+                       (SELECT COUNT(*) FROM users WHERE tenant_id = t.id) AS users_count
+                FROM tenants t
+                LEFT JOIN tenant_subscriptions ts ON ts.id = (
+                    SELECT MAX(id) FROM tenant_subscriptions WHERE tenant_id = t.id
+                )
+                LEFT JOIN plans p ON ts.plan_id = p.id
+                ORDER BY t.created_at DESC";
+
+        return $this->query($sql)->fetchAll();
+    }
+
+    /**
      * Get usage statistics for tenant
      */
     public function getUsageStats($tenantId)
     {
-        $stats = [];
+        $sql = "SELECT
+                    (SELECT COUNT(*) FROM properties WHERE tenant_id = ?) AS properties,
+                    (SELECT COUNT(*) FROM tours WHERE tenant_id = ? AND status = 'published') AS active_tours,
+                    (SELECT COUNT(*) FROM scenes WHERE tenant_id = ?) AS scenes,
+                    (SELECT COUNT(*) FROM users WHERE tenant_id = ?) AS users";
 
-        // Count properties
-        $stmt = $this->query("SELECT COUNT(*) as count FROM properties WHERE tenant_id = ?", [$tenantId]);
-        $stats['properties'] = $stmt->fetch()['count'];
-
-        // Count active tours
-        $stmt = $this->query("SELECT COUNT(*) as count FROM tours WHERE tenant_id = ? AND status = 'published'", [$tenantId]);
-        $stats['active_tours'] = $stmt->fetch()['count'];
-
-        // Count scenes
-        $stmt = $this->query("SELECT COUNT(*) as count FROM scenes WHERE tenant_id = ?", [$tenantId]);
-        $stats['scenes'] = $stmt->fetch()['count'];
-
-        // Count users
-        $stmt = $this->query("SELECT COUNT(*) as count FROM users WHERE tenant_id = ?", [$tenantId]);
-        $stats['users'] = $stmt->fetch()['count'];
-
-        return $stats;
+        $stats = $this->query($sql, array_fill(0, 4, $tenantId))->fetch();
+        return array_map('intval', $stats);
     }
 }

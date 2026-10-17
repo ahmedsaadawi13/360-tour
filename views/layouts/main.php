@@ -3,8 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $title ?? 'Splash360 Tour'; ?></title>
+    <title><?php echo e(($pageTitle ?? 'Dashboard') . ' - ' . config('name')); ?></title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="<?php echo asset('css/style.css'); ?>">
+    <?php if (!empty($useViewer)): ?>
+        <link rel="stylesheet" href="<?php echo asset('css/viewer360.css'); ?>">
+    <?php endif; ?>
 </head>
 <body>
     <div class="wrapper">
@@ -20,6 +24,9 @@
         </div>
     </div>
 
-    <script src="<?php echo asset('js/viewer360.js'); ?>"></script>
+    <?php if (!empty($useViewer)): ?>
+        <script src="<?php echo asset('js/viewer360.js'); ?>"></script>
+    <?php endif; ?>
+    <?php echo $scripts ?? ''; ?>
 </body>
 </html>

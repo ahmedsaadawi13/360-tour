@@ -33,7 +33,13 @@ class Database
                 $config['options']
             );
         } catch (PDOException $e) {
-            die("Database connection failed: " . $e->getMessage());
+            error_log('Database connection failed: ' . $e->getMessage());
+            if (PHP_SAPI === 'cli') {
+                fwrite(STDERR, "Database connection failed: " . $e->getMessage() . "\n");
+                exit(1);
+            }
+            http_response_code(503);
+            die(is_production() ? 'Service temporarily unavailable.' : 'Database connection failed: ' . htmlspecialchars($e->getMessage()));
         }
     }
 

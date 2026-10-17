@@ -3,6 +3,10 @@
 -- Compatible with MySQL 5.7+
 
 SET FOREIGN_KEY_CHECKS=0;
+DROP TABLE IF EXISTS `schema_migrations`;
+DROP TABLE IF EXISTS `login_attempts`;
+DROP TABLE IF EXISTS `tour_views`;
+DROP TABLE IF EXISTS `leads`;
 DROP TABLE IF EXISTS `password_resets`;
 DROP TABLE IF EXISTS `hotspots`;
 DROP TABLE IF EXISTS `scenes`;
@@ -29,6 +33,8 @@ CREATE TABLE `tenants` (
   `logo` VARCHAR(500) DEFAULT NULL,
   `address` TEXT DEFAULT NULL,
   `website` VARCHAR(500) DEFAULT NULL,
+  `brand_color` VARCHAR(7) DEFAULT NULL COMMENT 'Hex color used in public tour viewer',
+  `webhook_url` VARCHAR(500) DEFAULT NULL COMMENT 'Receives lead/tour events as JSON (n8n, CRM, Zapier...)',
   `status` ENUM('active', 'suspended', 'canceled') DEFAULT 'active',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -93,6 +99,7 @@ CREATE TABLE `tenant_subscriptions` (
   `current_period_start` TIMESTAMP NULL DEFAULT NULL,
   `current_period_end` TIMESTAMP NULL DEFAULT NULL,
   `canceled_at` TIMESTAMP NULL DEFAULT NULL,
+  `cancel_at_period_end` TINYINT(1) NOT NULL DEFAULT 0,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_tenant_id (`tenant_id`),
@@ -193,14 +200,15 @@ CREATE TABLE `tours` (
   `status` ENUM('draft', 'published') DEFAULT 'draft',
   `is_public` TINYINT(1) DEFAULT 1,
   `is_featured` TINYINT(1) DEFAULT 0,
+  `auto_rotate` TINYINT(1) NOT NULL DEFAULT 0,
+  `lead_form_enabled` TINYINT(1) NOT NULL DEFAULT 1,
   `views_count` INT UNSIGNED DEFAULT 0,
   `created_by` INT UNSIGNED DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  UNIQUE KEY unique_slug_per_tenant (`tenant_id`, `slug`),
+  UNIQUE KEY unique_slug (`slug`),
   INDEX idx_tenant_id (`tenant_id`),
   INDEX idx_property_id (`property_id`),
-  INDEX idx_slug (`slug`),
   INDEX idx_status (`status`),
   FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE CASCADE,
   FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON DELETE CASCADE,
@@ -260,10 +268,76 @@ CREATE TABLE `hotspots` (
 CREATE TABLE `password_resets` (
   `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   `email` VARCHAR(255) NOT NULL,
-  `token` VARCHAR(255) NOT NULL,
+  `token` VARCHAR(255) NOT NULL COMMENT 'SHA-256 hash of the emailed token',
+  `expires_at` TIMESTAMP NULL DEFAULT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_email (`email`),
   INDEX idx_token (`token`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- LEADS TABLE (contact requests captured from public tours)
+-- =====================================================
+CREATE TABLE `leads` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `tenant_id` INT UNSIGNED NOT NULL,
+  `tour_id` INT UNSIGNED DEFAULT NULL,
+  `property_id` INT UNSIGNED DEFAULT NULL,
+  `name` VARCHAR(150) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `phone` VARCHAR(50) DEFAULT NULL,
+  `message` TEXT DEFAULT NULL,
+  `status` ENUM('new', 'contacted', 'qualified', 'closed', 'lost') NOT NULL DEFAULT 'new',
+  `notes` TEXT DEFAULT NULL,
+  `source` VARCHAR(50) DEFAULT 'tour',
+  `ip_address` VARCHAR(45) DEFAULT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_tenant_status (`tenant_id`, `status`),
+  INDEX idx_tour_id (`tour_id`),
+  INDEX idx_created (`created_at`),
+  FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`tour_id`) REFERENCES `tours`(`id`) ON DELETE SET NULL,
+  FOREIGN KEY (`property_id`) REFERENCES `properties`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- TOUR VIEWS TABLE (analytics)
+-- =====================================================
+CREATE TABLE `tour_views` (
+  `id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `tenant_id` INT UNSIGNED NOT NULL,
+  `tour_id` INT UNSIGNED NOT NULL,
+  `visitor_hash` CHAR(64) NOT NULL,
+  `referrer_host` VARCHAR(255) DEFAULT NULL,
+  `is_embed` TINYINT(1) NOT NULL DEFAULT 0,
+  `viewed_on` DATE NOT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_tour_day (`tour_id`, `viewed_on`),
+  INDEX idx_tenant_day (`tenant_id`, `viewed_on`),
+  INDEX idx_visitor (`tour_id`, `visitor_hash`, `viewed_on`),
+  FOREIGN KEY (`tenant_id`) REFERENCES `tenants`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`tour_id`) REFERENCES `tours`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- LOGIN ATTEMPTS TABLE (brute-force throttling)
+-- =====================================================
+CREATE TABLE `login_attempts` (
+  `id` INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  `email` VARCHAR(255) NOT NULL,
+  `ip_address` VARCHAR(45) NOT NULL,
+  `attempted_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_email_time (`email`, `attempted_at`),
+  INDEX idx_ip_time (`ip_address`, `attempted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- =====================================================
+-- SCHEMA MIGRATIONS (applied by bin/migrate.php)
+-- =====================================================
+CREATE TABLE `schema_migrations` (
+  `migration` VARCHAR(255) NOT NULL PRIMARY KEY,
+  `applied_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- =====================================================
@@ -292,7 +366,7 @@ INSERT INTO `plans` (`name`, `slug`, `description`, `price_monthly`, `price_year
 -- Password: admin123 (change this after first login!)
 -- =====================================================
 INSERT INTO `users` (`tenant_id`, `email`, `password`, `first_name`, `last_name`, `role`, `status`) VALUES
-(NULL, 'admin@splash360tour.com', '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'Platform', 'Admin', 'platform_admin', 'active');
+(NULL, 'admin@splash360tour.com', '$2y$10$mPNwlS7JdLXjTrNX8TuRVe.E.nA8bYWfeQzIabMT2octQts4YL1C2', 'Platform', 'Admin', 'platform_admin', 'active');
 
 -- =====================================================
 -- SEED DATA - Default Settings
@@ -302,3 +376,6 @@ INSERT INTO `settings` (`key`, `value`, `type`, `description`) VALUES
 ('support_email', 'support@splash360tour.com', 'string', 'Support contact email'),
 ('trial_days', '14', 'integer', 'Default trial period in days'),
 ('default_currency', 'USD', 'string', 'Default currency code');
+
+-- Fresh installs already contain every migration
+INSERT INTO `schema_migrations` (`migration`) VALUES ('001_phase2.sql');

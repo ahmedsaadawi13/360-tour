@@ -18,10 +18,35 @@ class Scene extends BaseModel
      */
     public function getByTour($tourId, $tenantId)
     {
-        return $this->where([
-            'tour_id' => $tourId,
-            'tenant_id' => $tenantId
-        ], 'order_index', 'ASC');
+        $sql = "SELECT * FROM {$this->table} WHERE tour_id = ? AND tenant_id = ? ORDER BY order_index ASC, id ASC";
+        return $this->query($sql, [$tourId, $tenantId])->fetchAll();
+    }
+
+    /**
+     * Move a scene one position up or down within its tour
+     */
+    public function move($scene, $direction)
+    {
+        $scenes = $this->getByTour($scene['tour_id'], $scene['tenant_id']);
+        $ids = array_column($scenes, 'id');
+        $pos = array_search($scene['id'], $ids);
+        $swap = $direction === 'up' ? $pos - 1 : $pos + 1;
+
+        if ($pos === false || $swap < 0 || $swap >= count($ids)) {
+            return false;
+        }
+
+        list($ids[$pos], $ids[$swap]) = [$ids[$swap], $ids[$pos]];
+
+        // Renumber the whole tour so duplicate/legacy indexes are normalized
+        $this->beginTransaction();
+        $stmt = $this->db->prepare("UPDATE {$this->table} SET order_index = ? WHERE id = ?");
+        foreach ($ids as $index => $id) {
+            $stmt->execute([$index + 1, $id]);
+        }
+        $this->commit();
+
+        return true;
     }
 
     /**
